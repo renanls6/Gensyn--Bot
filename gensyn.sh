@@ -1,136 +1,168 @@
 #!/bin/bash
 
-# Colors
+set -e
+
+# Define environment
+ROOT=$PWD
+
+# Color and format codes
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-WHITE='\033[1;37m'
+PURPLE='\033[0;95m'
+BLUE='\033[0;94m'
+YELLOW='\033[0;33m'
 CYAN='\033[0;36m'
-NC='\033[0m' # No Color
+BOLD='\033[1m'
+NC='\033[0m'
 
-# Display header
-display_header() {
-    clear
-    echo -e "${CYAN}"
-    echo -e " ${BLUE} ██████╗ ██╗  ██╗    ██████╗ ███████╗███╗   ██╗ █████╗ ███╗   ██╗${NC}"
-    echo -e " ${BLUE}██╔═████╗╚██╗██╔╝    ██╔══██╗██╔════╝████╗  ██║██╔══██╗████╗  ██║${NC}"
-    echo -e " ${BLUE}██║██╔██║ ╚███╔╝     ██████╔╝█████╗  ██╔██╗ ██║███████║██╔██╗ ██║${NC}"
-    echo -e " ${BLUE}████╔╝██║ ██╔██╗     ██╔══██╗██╔══╝  ██║╚██╗██║██╔══██║██║╚██╗██║${NC}"
-    echo -e " ${BLUE}╚██████╔╝██╔╝ ██╗    ██║  ██║███████╗██║ ╚████║██║  ██║██║ ╚████║${NC}"
-    echo -e " ${BLUE}╚═════╝ ╚═╝  ╚═╝    ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝  ╚═══╝${NC}"
-    echo -e "${BLUE}=======================================================${NC}"
-    echo -e "${GREEN}       ✨ Bitz Setup Script ⛏️  ✨${NC}"
-    echo -e "${GREEN}       ✨ Follow me on X :https://x.com/renanls6  ✨${NC}"
-    echo -e "${BLUE}=======================================================${NC}"
+# Utility functions
+print_step() {
+    echo -e "\n${CYAN}${BOLD}Step $1: $2${NC}"
 }
 
-# ----------- Architecture check (optional) ----------- 
-ARCH=$(uname -m)
-if [[ "$ARCH" != "x86_64" && "$ARCH" != "aarch64" ]]; then
-  echo "❌ Unsupported architecture: $ARCH, exiting."
-  exit 1
+check_success() {
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}\u2713 Success!${NC}"
+    else
+        echo -e "${RED}\u2717 Failed! Please check errors above and try again.${NC}"
+        exit 1
+    fi
+}
+
+trap_cleanup() {
+    echo -e "${YELLOW}Cleaning up background processes...${NC}"
+    kill $SERVER_PID $NGROK_PID 2>/dev/null || true
+    exit 0
+}
+
+trap trap_cleanup INT
+
+# Export default environment variables
+export PUB_MULTI_ADDRS="${PUB_MULTI_ADDRS:-}" \
+       PEER_MULTI_ADDRS="${PEER_MULTI_ADDRS:-/ip4/38.101.215.13/tcp/30002/p2p/QmQ2gEXoPJg6iMBSUFWGzAabS2VhnzuS782Y637hGjfsRJ}" \
+       HOST_MULTI_ADDRS="${HOST_MULTI_ADDRS:-/ip4/0.0.0.0/tcp/38331}" \
+       IDENTITY_PATH="${IDENTITY_PATH:-$ROOT/swarm.pem}" \
+       HF_HUB_DOWNLOAD_TIMEOUT=120
+
+# ASCII Banner
+cat << "EOF"
+    \033[38;5;45m\033[1m
+    ██████  ██            ██████ ██     ██  █████  █████  ███    ███
+    ██   ██ ██            ██      ██     ██ ██   ██ ██   ██ ████  ████
+    ██████  ██      █████ ████  ██ ██████ █████  ██ ██████
+    ██   ██ ██                 ██ ███ ██ ██   ██ ██   ██ ██  ██  ██
+    ██   ██ ███████       ██████  ███ ██ ██   ██ ██   ██ ██      ██
+
+           JOIN THE COMMUNITY : https://t.me/Nexgenexplore
+EOF
+
+# Ensure modal-login dir exists
+if [ ! -d modal-login ]; then
+    echo -e "${RED}Directory 'modal-login' not found! Exiting.${NC}"
+    exit 1
 fi
 
-# ----------- Check and update /etc/hosts ----------- 
-echo "🔧 Checking /etc/hosts configuration..."
-if ! grep -q "raw.githubusercontent.com" /etc/hosts; then
-  echo "📝 Writing GitHub acceleration Hosts entries..."
-  sudo tee -a /etc/hosts > /dev/null <<EOL
-199.232.68.133 raw.githubusercontent.com
-199.232.68.133 user-images.githubusercontent.com
-199.232.68.133 avatars2.githubusercontent.com
-199.232.68.133 avatars1.githubusercontent.com
-EOL
-else
-  echo "✅ Hosts are configured, skipping."
-fi
-
-# ----------- Install dependencies ----------- 
-echo "📦 Installing dependencies: curl, git, python3.12, pip, nodejs, yarn, screen..."
-
-# Add Python 3.12 PPA source and install
-sudo apt update
-sudo apt install -y software-properties-common
-sudo add-apt-repository -y ppa:deadsnakes/ppa
-sudo apt update
-sudo apt install -y python3.12 python3.12-venv python3.12-distutils
-
-# Install other basic tools
-sudo apt install -y curl git screen
-
-# Install Node.js (using NodeSource repository)
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt install -y nodejs
-
-# Install Yarn (via npm)
-npm install -g yarn
-
-# ----------- Set default Python3.12 ----------- 
-echo "🐍 Setting Python3.12 as the default version..."
-echo 'alias python=python3.12' >> ~/.bashrc
-echo 'alias python3=python3.12' >> ~/.bashrc
-echo 'alias pip=pip3' >> ~/.bashrc
+cd modal-login
 source ~/.bashrc
 
-# ----------- Check Python version ----------- 
-PY_VERSION=$(python3 --version | grep "3.12" || true)
-if [[ -z "$PY_VERSION" ]]; then
-  echo "⚠️ Python version not correctly pointing to 3.12, reloading configuration..."
-  source ~/.bashrc
+# Install Node.js/npm if missing
+if ! command -v npm >/dev/null 2>&1; then
+    echo -e "${YELLOW}Installing Node.js and npm...${NC}"
+    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+    sudo apt-get install -y nodejs
 fi
-echo "✅ Current Python version: $(python3 --version)"
 
-# ----------- Clone repository ----------- 
-if [[ -d "rl-swarm" ]]; then
-  echo "⚠️ The rl-swarm folder already exists in the current directory."
-  read -p "Do you want to overwrite the existing directory? (y/n): " confirm
-  if [[ "$confirm" == [yY] ]]; then
-    echo "🗑️ Deleting old directory..."
-    rm -rf rl-swarm
-  else
-    echo "❌ User cancelled the operation, exiting."
+# Install npm dependencies
+echo -e "\n${CYAN}Installing frontend dependencies...${NC}"
+npm install --legacy-peer-deps
+
+# Start frontend server
+npm run dev > server.log 2>&1 &
+SERVER_PID=$!
+
+# Detect local port
+for i in {1..60}; do
+    PORT=$(grep -oE "http://localhost:[0-9]+" server.log | head -n1 | cut -d: -f3)
+    [ -n "$PORT" ] && break
+    sleep 1
+
+done
+
+[ -z "$PORT" ] && echo -e "${RED}Timeout waiting for frontend to start.${NC}" && kill $SERVER_PID && exit 1
+
+echo -e "${GREEN}Frontend running on port $PORT${NC}"
+
+# Extract ORG_ID
+ORG_ID=$(awk -F '"' '/"/{print $(NF-1); exit}' temp-data/userData.json 2>/dev/null || echo "")
+[ -n "$ORG_ID" ] && echo -e "ORG_ID: ${BOLD}${ORG_ID}${NC}"
+
+# Detect architecture and OS
+ARCH=$(uname -m)
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+case $ARCH in
+    x86_64) NGROK_ARCH="amd64";;
+    arm64|aarch64) NGROK_ARCH="arm64";;
+    arm*) NGROK_ARCH="arm";;
+    *) echo -e "${RED}Unsupported arch: $ARCH${NC}"; exit 1;;
+esac
+
+# Install ngrok
+print_step 2 "Installing ngrok"
+wget -q "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-${OS}-${NGROK_ARCH}.tgz"
+tar -xzf ngrok-v3-stable-${OS}-${NGROK_ARCH}.tgz
+sudo mv ngrok /usr/local/bin/
+rm ngrok-v3-stable-${OS}-${NGROK_ARCH}.tgz
+
+# Authenticate ngrok
+echo -e "${YELLOW}Enter your ngrok authtoken:${NC}"
+read -rp "> " NGROK_TOKEN
+ngrok authtoken "$NGROK_TOKEN"
+check_success
+
+# Start ngrok
+print_step 3 "Starting ngrok tunnel"
+ngrok http "$PORT" --log=stdout --log-format=json > ngrok_output.log 2>&1 &
+NGROK_PID=$!
+sleep 5
+
+# Extract ngrok URL
+FORWARDING_URL=$(grep -oE '"url":"https://[^"]+' ngrok_output.log | cut -d'"' -f4 | head -n1)
+
+if [ -n "$FORWARDING_URL" ]; then
+    echo -e "${GREEN}${BOLD}Access your app at:${NC} ${CYAN}${BOLD}${FORWARDING_URL}${NC}"
+else
+    echo -e "${RED}Failed to obtain ngrok URL.${NC}"
+    kill $NGROK_PID
     exit 1
-  fi
 fi
 
-echo "📥 Cloning rl-swarm repository..."
-git clone https://github.com/zunxbt/rl-swarm.git
+cd "$ROOT"
+echo -e "\n${CYAN}Waiting for user login...${NC}"
+while [ ! -f modal-login/temp-data/userData.json ]; do sleep 3; done
 
-# ----------- Modify configuration files ----------- 
-echo "📝 Modifying YAML configuration..."
-sed -i 's/max_steps: 20/max_steps: 5/' rl-swarm/hivemind_exp/configs/mac/grpo-qwen-2.5-0.5b-deepseek-r1.yaml
-sed -i 's/gradient_accumulation_steps: 8/gradient_accumulation_steps: 1/' rl-swarm/hivemind_exp/configs/mac/grpo-qwen-2.5-0.5b-deepseek-r1.yaml
-sed -i 's/max_completion_length: 1024/max_completion_length: 512/' rl-swarm/hivemind_exp/configs/mac/grpo-qwen-2.5-0.5b-deepseek-r1.yaml
+# Install Python requirements
+echo -e "${CYAN}Installing Python packages...${NC}"
+pip install -r requirements-hivemind.txt > /dev/null
+pip install -r requirements.txt > /dev/null
 
-echo "📝 Modifying Python startup parameters..."
-sed -i 's/startup_timeout=30/startup_timeout=120/' rl-swarm/hivemind_exp/runner/gensyn/testnet_grpo_runner.py
+# Determine system configuration
+if ! command -v nvidia-smi >/dev/null 2>&1 || [ -n "$CPU_ONLY" ]; then
+    CONFIG_PATH="$ROOT/hivemind_exp/configs/mac/grpo-qwen-2.5-0.5b-deepseek-r1.yaml"
+else
+    pip install -r requirements_gpu.txt > /dev/null
+    CONFIG_PATH="$ROOT/hivemind_exp/configs/gpu/grpo-qwen-2.5-0.5b-deepseek-r1.yaml"
+fi
 
-# ----------- Clean port usage ----------- 
-echo "🧹 Cleaning up port usage..."
-pid=$(lsof -ti:3000) && [ -n "$pid" ] && kill -9 $pid && echo "✅ Killed process on port 3000: $pid" || echo "✅ Port 3000 is not occupied"
+# Hugging Face token
+if [ -n "$HF_TOKEN" ]; then
+    HUGGINGFACE_ACCESS_TOKEN=$HF_TOKEN
+else
+    read -p "Do you want to push to Hugging Face Hub? [y/N] " answer
+    case $answer in
+        [Yy]*) read -p "Enter your token: " HUGGINGFACE_ACCESS_TOKEN;;
+        *) HUGGINGFACE_ACCESS_TOKEN="None";;
+    esac
+fi
 
-# ----------- Start screen session ----------- 
-echo "🖥️ Starting and entering screen session gensyn..."
-
-sleep 2
-screen -S gensyn bash -c '
-  cd rl-swarm || exit 1
-
-  echo "🐍 Creating Python virtual environment..."
-  python3.12 -m venv .venv
-  source .venv/bin/activate
-
-  echo "🔧 Setting PyTorch MPS environment variables (optional for Linux, can be commented out)..."
-  export PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.0
-  export PYTORCH_ENABLE_MPS_FALLBACK=1
-
-  echo "🚀 Starting RL-Swarm..."
-  chmod +x run_rl_swarm.sh
-  ./run_rl_swarm.sh
-
-  # Deactivate virtual environment if it's active
-  if type deactivate &>/dev/null; then
-    deactivate
-  fi
-'
+echo -e "\n${GREEN}${BOLD}Ready to start training. Good luck in the swarm!${NC}"
+# You can launch training here using: CONFIG_PATH, ORG_ID, HUGGINGFACE_ACCESS_TOKEN
